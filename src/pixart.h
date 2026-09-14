@@ -28,6 +28,9 @@ struct pixart_data {
 
     struct gpio_callback         irq_gpio_cb; // motion pin irq callback
     struct k_work                trigger_work; // realtrigger job
+#if IS_ENABLED(CONFIG_PMW3610_ALT_DIAGNOSTIC_POLL)
+    struct k_work_delayable      diagnostic_poll_work;
+#endif
 
     struct k_work_delayable      init_work; // the work structure for delayable init steps
     int                          async_init_step;

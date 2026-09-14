@@ -94,6 +94,12 @@ config PMW3610_ALT_REST3_SAMPLE_TIME_MS
     help
       Default REST2 mode sample period in millisecond.
 
+config PMW3610_ALT_DIAGNOSTIC_POLL
+  bool "Poll PMW3610 periodically for diagnostics"
+  default n
+  help
+    Periodically poll motion data and emit extra init logs for bring-up diagnostics.
+
 module = PMW3610_ALT
 module-str = PMW3610_ALT
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"

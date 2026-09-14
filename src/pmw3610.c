@@ -48,6 +48,9 @@ static int pmw3610_async_init_power_up(const struct device *dev);
 static int pmw3610_async_init_clear_ob1(const struct device *dev);
 static int pmw3610_async_init_check_ob1(const struct device *dev);
 static int pmw3610_async_init_configure(const struct device *dev);
+#if IS_ENABLED(CONFIG_PMW3610_ALT_DIAGNOSTIC_POLL)
+static void pmw3610_diagnostic_poll(struct k_work *work);
+#endif
 
 static int (*const async_init_fn[ASYNC_INIT_STEP_COUNT])(const struct device *dev) = {
     [ASYNC_INIT_STEP_POWER_UP] = pmw3610_async_init_power_up,
@@ -327,6 +330,7 @@ static int pmw3610_async_init_check_ob1(const struct device *dev) {
         LOG_ERR("Failed self-test (0x%x)", value);
         return -EINVAL;
     }
+    LOG_INF("PMW3610 observation register 0x%x", value);
 
     uint8_t product_id = 0x01;
     err = pmw3610_read_reg(dev, PMW3610_REG_PRODUCT_ID, &product_id);
@@ -339,6 +343,7 @@ static int pmw3610_async_init_check_ob1(const struct device *dev) {
         LOG_ERR("Incorrect product id 0x%x (expecting 0x%x)!", product_id, PMW3610_PRODUCT_ID);
         return -EIO;
     }
+    LOG_INF("PMW3610 product id 0x%x", product_id);
 
     return 0;
 }
@@ -416,6 +421,9 @@ static void pmw3610_async_init(struct k_work *work) {
             data->ready = true; // sensor is ready to work
             LOG_INF("PMW3610 initialized");
             pmw3610_set_interrupt(dev, true);
+#if IS_ENABLED(CONFIG_PMW3610_ALT_DIAGNOSTIC_POLL)
+            k_work_schedule(&data->diagnostic_poll_work, K_SECONDS(1));
+#endif
         } else {
             k_work_schedule(&data->init_work, K_MSEC(async_init_delay[data->async_init_step]));
         }
@@ -506,10 +514,26 @@ static int pmw3610_report_data(const struct device *dev) {
     return err;
 }
 
+#if IS_ENABLED(CONFIG_PMW3610_ALT_DIAGNOSTIC_POLL)
+static void pmw3610_diagnostic_poll(struct k_work *work) {
+    struct k_work_delayable *work2 = (struct k_work_delayable *)work;
+    struct pixart_data *data = CONTAINER_OF(work2, struct pixart_data, diagnostic_poll_work);
+    const struct device *dev = data->dev;
+    const struct pixart_config *config = dev->config;
+    int irq_level = gpio_pin_get_dt(&config->irq_gpio);
+
+    LOG_INF("PMW3610 diagnostic poll ready=%d err=%d motion_irq=%d", data->ready, data->err,
+            irq_level);
+    pmw3610_report_data(dev);
+    k_work_schedule(&data->diagnostic_poll_work, K_SECONDS(1));
+}
+#endif
+
 static void pmw3610_gpio_callback(const struct device *gpiob, struct gpio_callback *cb,
                                   uint32_t pins) {
     struct pixart_data *data = CONTAINER_OF(cb, struct pixart_data, irq_gpio_cb);
     const struct device *dev = data->dev;
+    LOG_DBG("PMW3610 motion IRQ callback pins=0x%x", pins);
     pmw3610_set_interrupt(dev, false);
     k_work_submit(&data->trigger_work);
 }
@@ -555,6 +579,9 @@ static int pmw3610_init(const struct device *dev) {
     const struct pixart_config *config = dev->config;
     int err;
 
+    LOG_INF("PMW3610 init: spi=%s cs_pin=%d irq_pin=%d", config->spi.bus->name,
+            config->spi.config.cs.gpio.pin, config->irq_gpio.pin);
+
 	if (!spi_is_ready_dt(&config->spi)) {
 		LOG_ERR("%s is not ready", config->spi.bus->name);
 		return -ENODEV;
@@ -574,6 +601,9 @@ static int pmw3610_init(const struct device *dev) {
 
     // init trigger handler work
     k_work_init(&data->trigger_work, pmw3610_work_callback);
+#if IS_ENABLED(CONFIG_PMW3610_ALT_DIAGNOSTIC_POLL)
+    k_work_init_delayable(&data->diagnostic_poll_work, pmw3610_diagnostic_poll);
+#endif
 
     // init irq routine
     err = pmw3610_init_irq(dev);
