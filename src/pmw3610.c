@@ -742,3 +742,23 @@ static int on_activity_state(const zmk_event_t *eh) {
 
 ZMK_LISTENER(zmk_pmw3610_idle_sleeper, on_activity_state);
 ZMK_SUBSCRIPTION(zmk_pmw3610_idle_sleeper, zmk_activity_state_changed);
+
+#if IS_ENABLED(CONFIG_PMW3610_ALT_TIMER_POLL)
+/* right half only: MOTION pin never asserts, so read the burst on a timer.
+ * ponytail: fixed 8 ms poll, no idle backoff; add one if this half ever runs on battery */
+static void pmw3610_poll_fn(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(pmw3610_poll_work, pmw3610_poll_fn);
+static void pmw3610_poll_fn(struct k_work *work) {
+    const struct device *dev = DEVICE_DT_INST_GET(0);
+    struct pixart_data *data = dev->data;
+    if (data->ready) {
+        pmw3610_report_data(dev);
+    }
+    k_work_schedule(&pmw3610_poll_work, K_MSEC(8));
+}
+static int pmw3610_poll_init(void) {
+    k_work_schedule(&pmw3610_poll_work, K_MSEC(3000));
+    return 0;
+}
+SYS_INIT(pmw3610_poll_init, APPLICATION, 99);
+#endif

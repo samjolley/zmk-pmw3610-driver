@@ -100,6 +100,12 @@ config PMW3610_ALT_DIAGNOSTIC_POLL
   help
     Periodically poll motion data and emit extra init logs for bring-up diagnostics.
 
+config PMW3610_ALT_TIMER_POLL
+  bool "Read motion on an 8 ms timer instead of the MOTION interrupt"
+  default n
+  help
+    For a board whose MOTION line never asserts (Tempest Dux v0.6.56 right half).
+
 module = PMW3610_ALT
 module-str = PMW3610_ALT
 source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
